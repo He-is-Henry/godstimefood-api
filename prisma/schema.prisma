@@ -1,0 +1,174 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  CUSTOMER
+}
+
+enum Status {
+  PENDING
+  CONFIRMED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+model User {
+  id  Int  @id  @default(autoincrement())
+  email String  @unique
+  firstName  String
+  lastName  String
+  password String
+  mustChangePassword Boolean @default(false)
+  role  Role  @default(CUSTOMER)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  avatar  String?
+  
+  addresses Address[]
+  cartItems CartItem[]
+  orders  Order[]
+  sessions  Session[]
+}
+
+model Session {
+  id  String  @id @default(uuid())
+  userId  Int
+  refreshTokenHash  String
+  deviceInfo  String
+  location  String?
+  ipAddress String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+}
+
+model Address {
+  id  Int  @id  @default(autoincrement())
+  userId  Int
+  address String
+  city  String?
+  state String?
+  label String?
+  isDefault Boolean @default(false)
+
+  user  User @relation(fields: [userId], references: [id])
+}
+
+model Product {
+  // scalar
+  id  Int @id @default(autoincrement())
+  name String
+  description String?
+  price Int
+  availableQuantity Int?
+  isAvailable Boolean @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // relations
+  categories  ProductCategory[]
+  images ProductImage[]
+  cartItems CartItem[]
+  orderItems  OrderItem[]
+
+  @@unique([name, price])
+}
+
+model Category { 
+  id  Int  @id  @default(autoincrement())
+  name  String
+
+  productCategories ProductCategory[]
+
+  @@unique([name])
+}
+
+model ProductCategory {
+  id Int  @id @default(autoincrement())
+  productId Int
+  categoryId  Int
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete:  Cascade)
+
+  @@unique([productId, categoryId])
+}
+
+model Image {
+  id  Int @id @default(autoincrement())
+  name String 
+  path String
+
+  productImages ProductImage[]
+}
+
+model ProductImage {
+  id  Int @id @default(autoincrement())
+  productId Int
+  imageId Int
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  image Image @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, imageId])
+}
+
+model CartItem {
+  // scalar
+  id  Int @id @default(autoincrement())
+  userId  Int
+  productId Int
+  quantity  Int
+
+  // relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  // constraints 
+  @@unique([productId, userId])
+}
+
+model Order {
+  id  Int @id @default(autoincrement())
+  customerId Int
+  status Status @default(PENDING)
+  isPaid Boolean @default(false)
+  totalAmount Int
+  deliveryAddress String
+  confirmationCodeHash  String?
+  confirmationAttempts Int  @default(0)
+  confirmationLockedUntil DateTime?
+  deliveredAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  customer  User  @relation(fields: [customerId], references: [id])
+
+  items OrderItem[]
+}
+
+model OrderItem {
+  id  Int @id @default(autoincrement())
+  orderId Int
+  productId Int
+  quantity  Int
+  unitPrice Int
+
+  order Order @relation(fields: [orderId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+}
+
