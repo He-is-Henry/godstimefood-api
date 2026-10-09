@@ -116,6 +116,9 @@ export class SessionsService {
   resolveLocation(sessionId: string, ipAddress: string) {
     const geo = geoip.lookup(ipAddress);
 
+    console.log(ipAddress)
+    this.logger.debug({ geo });
+    
     if (!geo) return;
 
     this.logger.debug({ geo });
