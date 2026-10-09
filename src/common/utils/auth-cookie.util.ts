@@ -12,7 +12,7 @@ export const handleTokenRes = (
     maxAge: 1000 * 60 * 60 * 24 * 30,
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   });
 
   return res.status(200).json({
