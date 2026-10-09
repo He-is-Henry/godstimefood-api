@@ -125,6 +125,9 @@ export class SessionsService {
     const parts = [geo.city, geo.region, countryName].filter(Boolean);
     const location = parts.join(', ');
 
+    // debug
+    console.log(location);
+    
     return this.prisma.session
       .update({
         where: { id: sessionId },
