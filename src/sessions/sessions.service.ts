@@ -115,13 +115,11 @@ export class SessionsService {
 
   resolveLocation(sessionId: string, ipAddress: string) {
     const geo = geoip.lookup(ipAddress);
-
-    console.log(ipAddress)
-    this.logger.debug({ geo });
+    
+    this.logger.debug({ geo, ipAddress });
     
     if (!geo) return;
-
-    this.logger.debug({ geo });
+    
     const countryName = new Intl.DisplayNames(['en'], { type: 'region' }).of(
       geo.country,
     );
