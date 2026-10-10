@@ -14,8 +14,12 @@ export const ClientData = createParamDecorator(
     const userAgent = request['headers']['user-agent'] ?? 'Unknown device';
 
     console.log({ userAgent });
+    
+    const rawIp = request.headers['true-client-ip'] || request.headers['x-forwarded-for'];
+    
+    const ipAddress = typeof rawIp === 'string' ? rawIp.split(',')[0].trim() : request.ip ?? 'Unknown Ip';
 
-    const ipAddress = request.ip ?? 'Unkown Ip';
+
     const { browser, device, os } = UAParser(userAgent);
 
     const browserString = browser.name
