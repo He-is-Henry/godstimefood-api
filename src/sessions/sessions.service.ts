@@ -116,8 +116,6 @@ export class SessionsService {
   resolveLocation(sessionId: string, ipAddress: string) {
     const geo = geoip.lookup(ipAddress);
     
-    this.logger.debug({ geo, ipAddress });
-    
     if (!geo) return;
     
     const countryName = new Intl.DisplayNames(['en'], { type: 'region' }).of(
@@ -126,9 +124,6 @@ export class SessionsService {
     const parts = [geo.city, geo.region, countryName].filter(Boolean);
     const location = parts.join(', ');
 
-    // debug
-    console.log(location);
-    
     return this.prisma.session
       .update({
         where: { id: sessionId },
