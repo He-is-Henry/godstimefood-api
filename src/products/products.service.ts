@@ -66,6 +66,7 @@ export class ProductsService {
   }
 
   async findOne(id: number) {
+    console.log('getting Product either id: ', id)
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: PopulatedProductArgs.include,
