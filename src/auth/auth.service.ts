@@ -1,7 +1,6 @@
 import {
   ConflictException,
   Injectable,
-  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { UsersService } from 'src/users/users.service';
@@ -13,6 +12,7 @@ import * as crypto from 'crypto';
 import { ISClientData } from 'src/common/decorators/client-data.decorator';
 import { SessionsService } from 'src/sessions/sessions.service';
 import { UpdateUserDto } from 'src/users/dto/update-user.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -50,9 +50,9 @@ export class AuthService {
   async login(email: string, password: string, clientData: ISClientData) {
     const user = await this.usersService.findByEmail(email);
 
-    if (!user) throw new NotFoundException('This email does not exist');
-
     const passwordMatches = await bcrypt.compare(password, user.password);
+
+    console.log(user.password);
 
     if (!passwordMatches)
       throw new UnauthorizedException('Incorrect password, try again');
@@ -65,6 +65,7 @@ export class AuthService {
       sessionId,
       role: user.role,
       mustChangePassword: user.mustChangePassword,
+      active: user.active,
     });
 
     const refreshTokenHash = this.hashToken(tokens.refreshToken);
@@ -110,19 +111,13 @@ export class AuthService {
     const incomingTokenHash = this.hashToken(refreshToken);
 
     if (session.refreshTokenHash !== incomingTokenHash) {
-      console.log('session refresh hash', session.refreshTokenHash);
-
-      console.log('incoming refresh hash', incomingTokenHash);
-
       await this.sessionsService.delete(decoded.sessionId);
       throw new UnauthorizedException('Invalid refresh token');
     }
 
     const user = await this.usersService.findById(decoded.id);
 
-    if (!user) throw new NotFoundException('User not found');
-
-    const { id, mustChangePassword, role, email } = user;
+    const { id, mustChangePassword, role, email, active } = user;
     const sessionId = decoded.sessionId;
 
     const payload: JwtPayload = {
@@ -131,6 +126,7 @@ export class AuthService {
       mustChangePassword,
       email,
       role,
+      active,
     };
 
     const tokens = this.signTokens(payload);
@@ -150,13 +146,30 @@ export class AuthService {
   async getProfile(id: number) {
     const user = await this.usersService.findById(id);
 
-    if (!user) throw new NotFoundException('User not found');
-
     return user;
   }
 
   async editProfile(id: number, updateUserDto: UpdateUserDto) {
     return this.usersService.updateUser(id, updateUserDto);
+  }
+
+  async changePassword(email: string, changePasswordDto: ChangePasswordDto) {
+    const user = await this.usersService.findByEmail(email);
+
+    const { password, currentPassword } = changePasswordDto;
+
+    const passwordMatches = await bcrypt.compare(
+      currentPassword,
+      user.password,
+    );
+
+    if (!passwordMatches)
+      throw new UnauthorizedException('Incorrect password, try again');
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    await this.usersService.updatePassword(user.id, passwordHash);
+
+    await this.sessionsService.revokeAll(user.id);
   }
 
   async uploadAvatar(id: number, file: Express.Multer.File) {

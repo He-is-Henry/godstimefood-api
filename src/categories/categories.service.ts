@@ -14,7 +14,15 @@ export class CategoriesService {
   }
 
   findAll() {
-    return this.prisma.category.findMany();
+    return this.prisma.category.findMany({
+      include: {
+        productCategories: {
+          select: {
+            productId: true,
+          },
+        },
+      },
+    });
   }
 
   findOne(id: number) {

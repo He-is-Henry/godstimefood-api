@@ -25,6 +25,7 @@ import { ExtractToken } from 'src/common/decorators/extract-token.decorator';
 import { User } from 'src/common/decorators/user.decorator';
 import { UpdateUserDto } from 'src/users/dto/update-user.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -85,6 +86,15 @@ export class AuthController {
     return this.authService.getProfile(userId);
   }
 
+  @UseInterceptors(FileInterceptor('file'))
+  @Patch('avatar')
+  async uploadAvatar(
+    @User('id') userId: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.authService.uploadAvatar(userId, file);
+  }
+
   @Patch()
   async editProfile(
     @User('id') userId: number,
@@ -93,13 +103,23 @@ export class AuthController {
     return this.authService.editProfile(userId, updateUserDto);
   }
 
-  @UseInterceptors(FileInterceptor('file'))
-  @Patch()
-  async uploadAvatar(
-    @User('id') userId: number,
-    @UploadedFile() file: Express.Multer.File,
+  @Patch('change-password')
+  async changePassword(
+    @ClientData() clientData: ISClientData,
+    @User('email') email: string,
+    @Body() changePasswordDto: ChangePasswordDto,
+    @Res() res: Response,
   ) {
-    return this.authService.uploadAvatar(userId, file);
+    await this.authService.changePassword(email, changePasswordDto);
+
+    return this.login(
+      res,
+      {
+        email,
+        password: changePasswordDto.password,
+      },
+      clientData,
+    );
   }
 
   @Post('logout')

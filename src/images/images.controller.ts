@@ -33,7 +33,6 @@ export class ImagesController {
 
   @Get()
   findAll() {
-    console.log('Invoked!!!!');
     return this.imagesService.findAll();
   }
 

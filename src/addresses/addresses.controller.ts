@@ -32,7 +32,7 @@ export class AddressesController {
   @Patch(':id')
   updateAddress(
     @User('id') userId: number,
-    updateAddressDto: UpdateAddressDto,
+    @Body() updateAddressDto: UpdateAddressDto,
     @Param('id') id: string,
   ) {
     return this.addressesService.updateAddress(userId, +id, updateAddressDto);

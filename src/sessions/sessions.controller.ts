@@ -15,7 +15,7 @@ export class SessionsController {
   }
 
   @Delete('revoke/all')
-  async revokeAllExcept(
+  async revokeAll(
     @User('id') userId: number,
     @User('sessionId') sessionId: string,
   ) {

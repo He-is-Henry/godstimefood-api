@@ -28,8 +28,6 @@ export class SupabaseService {
   }
 
   async uploadFile(file: Express.Multer.File, folder = 'uploads') {
-    const all = await this.supabase.storage.from(this.bucket).list();
-    console.log('All existing images: ', all);
     if (!file) {
       throw new BadRequestException('No file provided for upload.');
     }

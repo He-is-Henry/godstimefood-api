@@ -7,6 +7,8 @@ export const handleTokenRes = (
   action = 'Sign in',
   user?: Omit<User, 'password'>,
 ) => {
+  removeCookie(res);
+
   const { accessToken, refreshToken } = tokens;
   res.cookie('refreshToken', refreshToken, {
     maxAge: 1000 * 60 * 60 * 24 * 30,

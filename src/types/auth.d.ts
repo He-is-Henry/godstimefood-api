@@ -4,4 +4,5 @@ interface JwtPayload {
   sessionId: string;
   role: import('@prisma/client').Role;
   mustChangePassword: boolean;
+  active: boolean;
 }

@@ -1,10 +1,4 @@
-import {
-  IsBoolean,
-  IsDateString,
-  IsInt,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString } from 'class-validator';
 
 export class CreateProductDto {
   @IsString()
@@ -18,14 +12,9 @@ export class CreateProductDto {
   price!: number;
 
   @IsInt()
+  @IsOptional()
   availableQuantity?: number;
 
   @IsBoolean()
   isAvailable!: boolean;
-
-  @IsDateString()
-  createdAt!: Date;
-
-  @IsDateString()
-  updatedAt!: Date;
 }

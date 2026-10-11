@@ -47,6 +47,12 @@ export class JwtAuthGuard implements CanActivate {
       )
         throw new BadRequestException('You must change your password');
 
+      if (!decoded.active) {
+        throw new UnauthorizedException(
+          'Your account is inactive, please contact your administrator',
+        );
+      }
+
       request.user = decoded;
 
       return true;

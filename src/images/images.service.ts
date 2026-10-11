@@ -37,7 +37,15 @@ export class ImagesService {
   }
 
   async findAll() {
-    const images = await this.prisma.image.findMany();
+    const images = await this.prisma.image.findMany({
+      include: {
+        productImages: {
+          select: {
+            productId: true,
+          },
+        },
+      },
+    });
 
     return images.map((i) => this.formatImage(i));
   }

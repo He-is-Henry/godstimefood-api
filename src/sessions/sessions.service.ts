@@ -83,7 +83,7 @@ export class SessionsService {
     return this.getSessions(userId, currentSessionId);
   }
 
-  revokeAllExcept(userId: number, excludedId: string) {
+  revokeAll(userId: number, excludedId?: string) {
     return this.prisma.session.deleteMany({
       where: {
         userId,
@@ -95,7 +95,7 @@ export class SessionsService {
   }
 
   async revokeAllOthers(userId: number, id: string) {
-    await this.revokeAllExcept(userId, id);
+    await this.revokeAll(userId, id);
 
     return this.getSessions(userId, id);
   }
@@ -115,9 +115,9 @@ export class SessionsService {
 
   resolveLocation(sessionId: string, ipAddress: string) {
     const geo = geoip.lookup(ipAddress);
-    
+
     if (!geo) return;
-    
+
     const countryName = new Intl.DisplayNames(['en'], { type: 'region' }).of(
       geo.country,
     );
