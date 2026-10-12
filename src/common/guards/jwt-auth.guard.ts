@@ -2,6 +2,7 @@ import {
   BadRequestException,
   CanActivate,
   ExecutionContext,
+  HttpException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -41,13 +42,16 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const decoded: JwtPayload = this.jwtService.verify(accessToken);
 
-      if (
-        decoded.mustChangePassword &&
-        !request.url.includes('change-password')
-      )
+      const allowedRoutes = ['change-password', 'logout', 'profile'];
+
+      const routeIsAllowed = allowedRoutes.some((r) => request.url.includes(r));
+
+      console.log({ routeIsAllowed });
+
+      if (decoded.mustChangePassword && !routeIsAllowed)
         throw new BadRequestException('You must change your password');
 
-      if (!decoded.active) {
+      if (!decoded.active && !routeIsAllowed) {
         throw new UnauthorizedException(
           'Your account is inactive, please contact your administrator',
         );
@@ -58,6 +62,10 @@ export class JwtAuthGuard implements CanActivate {
       return true;
     } catch (e) {
       console.log(e);
+
+      if (e instanceof HttpException) {
+        throw e;
+      }
       throw new UnauthorizedException('Access token malformed or expired');
     }
   }

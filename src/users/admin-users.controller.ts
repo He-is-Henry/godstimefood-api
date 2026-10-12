@@ -18,6 +18,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}
 
+  @Roles(Role.ADMIN, Role.MANAGER)
   @Get()
   findAll(
     @Query('page') page?: string,

@@ -50,7 +50,7 @@ export class AdminUsersService {
   async create(dto: CreateUserDto) {
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
-      throw new BadRequestException('Email is already registered');
+      throw new BadRequestException('Email is alrebady registered');
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);

@@ -26,18 +26,27 @@ export class CartItemsService {
         ...createCartItemDto,
         userId,
       },
+      include: {
+        product: true,
+      },
     });
   }
 
   findAll(userId: number) {
     return this.prisma.cartItem.findMany({
       where: { userId },
+      include: {
+        product: true,
+      },
     });
   }
 
   findOne(userId: number, id: number) {
     return this.prisma.cartItem.findUnique({
       where: { id, userId },
+      include: {
+        product: true,
+      },
     });
   }
 
@@ -45,6 +54,9 @@ export class CartItemsService {
     return this.prisma.cartItem.update({
       where: { id, userId },
       data: updateCartItemDto,
+      include: {
+        product: true,
+      },
     });
   }
 

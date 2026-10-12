@@ -33,7 +33,13 @@ export class UsersService {
       where: { email },
     });
 
-    return this.formatUser(user);
+    if (!user) return null;
+
+    if (user.avatar) {
+      user.avatar = this.supabaseService.getFile(user.avatar);
+    }
+
+    return user;
   }
 
   async findById(id: number) {

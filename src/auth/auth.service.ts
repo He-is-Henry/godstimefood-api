@@ -1,6 +1,8 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { UsersService } from 'src/users/users.service';
@@ -50,12 +52,19 @@ export class AuthService {
   async login(email: string, password: string, clientData: ISClientData) {
     const user = await this.usersService.findByEmail(email);
 
+    if (!user) throw new NotFoundException('User not found');
+
     const passwordMatches = await bcrypt.compare(password, user.password);
 
     console.log(user.password);
 
     if (!passwordMatches)
       throw new UnauthorizedException('Incorrect password, try again');
+
+    if (!user.active)
+      throw new ForbiddenException(
+        'Your account is inactive, please contact your administrator',
+      );
 
     const sessionId = crypto.randomUUID();
 
@@ -117,6 +126,11 @@ export class AuthService {
 
     const user = await this.usersService.findById(decoded.id);
 
+    if (!user.active)
+      throw new ForbiddenException(
+        'Your account is inactive, please contact your administrator',
+      );
+
     const { id, mustChangePassword, role, email, active } = user;
     const sessionId = decoded.sessionId;
 
@@ -156,6 +170,8 @@ export class AuthService {
   async changePassword(email: string, changePasswordDto: ChangePasswordDto) {
     const user = await this.usersService.findByEmail(email);
 
+    if (!user) throw new NotFoundException('User not found');
+
     const { password, currentPassword } = changePasswordDto;
 
     const passwordMatches = await bcrypt.compare(
@@ -170,6 +186,12 @@ export class AuthService {
     await this.usersService.updatePassword(user.id, passwordHash);
 
     await this.sessionsService.revokeAll(user.id);
+
+    if (user.mustChangePassword) {
+      await this.usersService.updateUser(user.id, {
+        mustChangePassword: false,
+      });
+    }
   }
 
   async uploadAvatar(id: number, file: Express.Multer.File) {

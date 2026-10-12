@@ -95,7 +95,7 @@ export class AuthController {
     return this.authService.uploadAvatar(userId, file);
   }
 
-  @Patch()
+  @Patch('profile')
   async editProfile(
     @User('id') userId: number,
     @Body() updateUserDto: UpdateUserDto,

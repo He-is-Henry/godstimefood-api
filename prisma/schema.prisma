@@ -31,6 +31,7 @@ model User {
   firstName  String
   lastName  String
   password String
+  phone String?
   mustChangePassword Boolean @default(false)
   active  Boolean @default(true)
   role  Role  @default(CUSTOMER)
