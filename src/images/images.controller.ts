@@ -47,7 +47,7 @@ export class ImagesController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @Query('sure') sure: string) {
-    return this.imagesService.remove(+id, sure === 'true');
+  remove(@Param('id') id: string) {
+    return this.imagesService.remove(+id);
   }
 }
