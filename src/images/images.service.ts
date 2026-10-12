@@ -79,7 +79,7 @@ export class ImagesService {
     }
   }
 
-  async remove(id: number, sure = false) {
+  async remove(id: number) {
     const imageDoc = await this.prisma.image.findUnique({
       where: { id },
       include: {
@@ -90,11 +90,6 @@ export class ImagesService {
     if (!imageDoc) throw new NotFoundException('Image does not exist');
 
     const image = this.formatImage(imageDoc);
-    if (imageDoc.productImages.length > 0 && !sure) {
-      throw new ConflictException(
-        `This image is currently linked to ${imageDoc.productImages.length} product(s). Are you sure you want to proceed?.`,
-      );
-    }
     await this.supabaseService.deleteFile(image.path);
 
     return this.prisma.image.delete({
