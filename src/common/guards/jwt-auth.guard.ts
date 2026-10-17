@@ -46,8 +46,6 @@ export class JwtAuthGuard implements CanActivate {
 
       const routeIsAllowed = allowedRoutes.some((r) => request.url.includes(r));
 
-      console.log({ routeIsAllowed });
-
       if (decoded.mustChangePassword && !routeIsAllowed)
         throw new BadRequestException('You must change your password');
 

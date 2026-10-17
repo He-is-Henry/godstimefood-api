@@ -1,9 +1,8 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { User } from 'src/common/decorators/user.decorator';
-import { Roles } from 'src/common/decorators/roles.decorator';
-import { Role } from '@prisma/client';
+import { UpdateOrderDto } from './dto/update-order.dto';
 
 @Controller('orders')
 export class OrdersController {
@@ -22,9 +21,32 @@ export class OrdersController {
     return this.ordersService.findOrders(customerId);
   }
 
-  @Get('admin')
-  @Roles(Role.ADMIN, Role.MANAGER)
-  findAllOrdersAdmin() {
-    return this.ordersService.findAllOrdersAdmin();
+  @Get(':id')
+  getOrder(@User('id') customerId: number, @Param('id') id: string) {
+    return this.ordersService.findOrder(customerId, +id);
+  }
+
+  @Patch(':id')
+  updateOrder(
+    @User('id') customerId: number,
+    @Param('id') id: string,
+    @Body() updateOrderDto: UpdateOrderDto,
+  ) {
+    return this.ordersService.updateOrder(customerId, +id, updateOrderDto);
+  }
+
+  @Patch(':id/cancel')
+  cancelOrder(@User('id') customerId: number, @Param('id') id: string) {
+    return this.ordersService.cancelOrder(customerId, +id);
+  }
+
+  @Patch(':id/paid')
+  claimPayment(@User('id') customerId: number, @Param('id') id: string) {
+    return this.ordersService.claimPayment(customerId, +id);
+  }
+
+  @Patch(':id/code')
+  getCode(@User('id') customerId: number, @Param('id') id: string) {
+    return this.ordersService.getCode(customerId, +id);
   }
 }

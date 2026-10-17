@@ -2,12 +2,16 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UsersService } from 'src/users/users.service';
-import { Prisma, Product, CartItem } from '@prisma/client';
+import { Prisma, Product, CartItem, Status, PaidStatus } from '@prisma/client';
 import { SupabaseService } from 'src/supabase/supabase.service';
+import { UpdateOrderDto } from './dto/update-order.dto';
+import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
 
 interface CartItemWithProd extends Omit<CartItem, 'id'> {
   product: Product;
@@ -37,44 +41,17 @@ const orderWithItemsInclude = Prisma.validator<Prisma.OrderInclude>()({
   },
 });
 
-const adminOrderInclude = Prisma.validator<Prisma.OrderInclude>()({
-  customer: {
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      phone: true,
-      email: true,
-    },
-  },
-  items: {
-    include: {
-      product: {
-        select: {
-          name: true,
-          description: true,
-          images: {
-            select: {
-              image: {
-                select: {
-                  path: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  },
-});
-
 export type OrderWithDetails = Prisma.OrderGetPayload<{
   include: typeof orderWithItemsInclude;
 }>;
 
-export type AdminOrderWithDetails = Prisma.OrderGetPayload<{
-  include: typeof adminOrderInclude;
-}>;
+const omit = {
+  cancelledById: true,
+  confirmedById: true,
+  assignedToId: true,
+  deliveredById: true,
+  paidById: true,
+};
 
 const BASE_DELIVERY_FEE = 500;
 const PER_ITEM_DELIVERY_FEE = 100;
@@ -86,6 +63,25 @@ export class OrdersService {
     private readonly usersService: UsersService,
     private readonly supabaseService: SupabaseService,
   ) {}
+
+  private normalizeOrder(order: OrderWithDetails) {
+    return {
+      ...order,
+      items: order.items.map((item) => ({
+        ...item,
+        product: {
+          name: item.product.name,
+          description: item.product.description,
+          images: {
+            item: item.product.images.map((img) => ({
+              path: img.image.path,
+              url: this.supabaseService.getFile(img.image.path),
+            })),
+          },
+        },
+      })),
+    };
+  }
 
   async createOrder(customerId: number, createOrderDto: CreateOrderDto) {
     const { productId, addressId, quantity } = createOrderDto;
@@ -215,48 +211,133 @@ export class OrdersService {
       },
       orderBy: { createdAt: 'desc' },
       include: orderWithItemsInclude,
+      omit,
     });
 
-    const mappedOrders = orders.map((order) => ({
-      ...order,
-      items: order.items.map((item) => ({
-        ...item,
-        product: {
-          name: item.product.name,
-          description: item.product.description,
-          images: item.product.images.map((img) => ({
-            path: img.image.path,
-            url: this.supabaseService.getFile(img.image.path),
-          })),
-        },
-      })),
-    }));
+    const mappedOrders = orders.map((order) => this.normalizeOrder(order));
 
     return mappedOrders;
   }
 
-  async findAllOrdersAdmin() {
-    const orders = await this.prisma.order.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: adminOrderInclude,
+  async findOrder(customerId: number, id: number) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        customerId,
+      },
+      include: orderWithItemsInclude,
+      omit,
     });
 
-    const mappedOrders = orders.map((order) => ({
-      ...order,
-      items: order.items.map((item) => ({
-        ...item,
-        product: {
-          name: item.product.name,
-          description: item.product.description,
-          images: item.product.images.map((img) => ({
-            path: img.image.path,
-            url: this.supabaseService.getFile(img.image.path),
-          })),
-        },
-      })),
-    }));
+    if (!order) throw new NotFoundException('Order not found');
 
-    return mappedOrders;
+    return this.normalizeOrder(order);
+  }
+
+  async cancelOrder(customerId: number, id: number) {
+    const order = await this.prisma.order.findUnique({
+      where: { id, customerId },
+      select: { status: true },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (order.status !== Status.PENDING) {
+      throw new BadRequestException(
+        'You can only cancel a pending order, contact support for more',
+      );
+    }
+
+    return await this.prisma.order.update({
+      where: { id, customerId, status: Status.PENDING },
+      data: { status: Status.CANCELLED },
+      include: orderWithItemsInclude,
+      omit,
+    });
+  }
+
+  async claimPayment(customerId: number, id: number) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        customerId,
+      },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status === Status.DELIVERED) {
+      throw new BadRequestException('You cannot update a delivered order');
+    }
+
+    return await this.prisma.order.update({
+      where: { id, customerId },
+      data: { paid: PaidStatus.PENDING_VERIFICATION },
+      include: orderWithItemsInclude,
+      omit,
+    });
+  }
+
+  async updateOrder(
+    customerId: number,
+    id: number,
+    updateOrderDto: UpdateOrderDto,
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        customerId,
+      },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+
+    if (order.status === Status.DELIVERED) {
+      throw new BadRequestException('You cannot update a delivered order');
+    }
+
+    return await this.prisma.order.update({
+      where: { id, customerId },
+      data: updateOrderDto,
+      include: orderWithItemsInclude,
+      omit,
+    });
+  }
+
+  async getCode(customerId: number, id: number) {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        customerId,
+      },
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status === Status.DELIVERED) {
+      throw new BadRequestException('You cannot update a delivered order');
+    }
+
+    if (order.paid !== PaidStatus.VERIFIED) {
+      throw new UnauthorizedException(
+        'You can only get code when payment is verified, please contact support for more',
+      );
+    }
+
+    const code = crypto.randomInt(10000).toString().padStart(4, '0');
+    const confirmationCodeHash = await bcrypt.hash(code, 10);
+
+    const updatedOrder = await this.prisma.order.update({
+      where: {
+        id,
+        customerId,
+      },
+      data: {
+        confirmationCodeHash,
+      },
+      include: orderWithItemsInclude,
+      omit,
+    });
+
+    return { code, order: updatedOrder };
   }
 
   private calculateGrandTotal(cart: Cart) {

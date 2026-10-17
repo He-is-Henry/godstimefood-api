@@ -25,6 +25,12 @@ enum Status {
   CANCELLED
 }
 
+enum PaidStatus {
+  UNPAID
+  PENDING_VERIFICATION
+  VERIFIED
+}
+
 model User {
   id  Int  @id  @default(autoincrement())
   email String  @unique
@@ -41,7 +47,15 @@ model User {
   
   addresses Address[]
   cartItems CartItem[]
-  orders  Order[]
+  messages Message[]
+
+  orders  Order[] @relation("orderCustomer")
+  confirmedOrders  Order[] @relation("orderConfirmedBy")
+  assignedOrders  Order[] @relation("orderAssignedTo")
+  cancelledOrders  Order[] @relation("orderCancelledBy")
+  paidOrders  Order[] @relation("orderPaidBy")
+  deliveredOrders Order[] @relation("orderDeliveredBy")
+  
   sessions  Session[]
 }
 
@@ -148,17 +162,31 @@ model Order {
   id  Int @id @default(autoincrement())
   customerId Int
   status Status @default(PENDING)
-  isPaid Boolean @default(false)
+  paid  PaidStatus  @default(UNPAID)
   totalAmount Int
   deliveryAddress String
   confirmationCodeHash  String?
   confirmationAttempts Int  @default(0)
   confirmationLockedUntil DateTime?
+  note String?
+
+  confirmedById Int?
+  assignedToId  Int?
+  cancelledById Int?
+  paidById  Int?
+  deliveredById Int?
+
   deliveredAt DateTime?
+  paidAt  DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  customer  User  @relation(fields: [customerId], references: [id])
+  customer  User  @relation("orderCustomer", fields: [customerId], references: [id])
+  confirmedBy  User?  @relation("orderConfirmedBy", fields: [confirmedById], references: [id])
+  assignedTo  User?  @relation("orderAssignedTo", fields: [assignedToId], references: [id])
+  cancelledBy  User?  @relation("orderCancelledBy", fields: [cancelledById], references: [id])
+  paidBy  User?  @relation("orderPaidBy", fields: [paidById], references: [id])
+  deliveredBy  User?  @relation("orderDeliveredBy", fields: [deliveredById], references: [id])
 
   items OrderItem[]
 }
@@ -174,3 +202,10 @@ model OrderItem {
   product Product @relation(fields: [productId], references: [id])
 }
 
+model Message {
+  id  Int @id @default(autoincrement())
+  userId  Int
+  read  Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id])
+}
