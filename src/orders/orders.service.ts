@@ -19,7 +19,7 @@ interface CartItemWithProd extends Omit<CartItem, 'id'> {
 
 type Cart = CartItemWithProd[];
 
-const orderWithItemsInclude = Prisma.validator<Prisma.OrderInclude>()({
+export const orderWithItemsInclude = Prisma.validator<Prisma.OrderInclude>()({
   items: {
     include: {
       product: {
@@ -332,6 +332,8 @@ export class OrdersService {
       },
       data: {
         confirmationCodeHash,
+        confirmationAttempts: 0,
+        confirmationLockedUntil: null,
       },
       include: orderWithItemsInclude,
       omit,

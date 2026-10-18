@@ -5,10 +5,17 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { PaidStatus, Prisma, Role, Status } from '@prisma/client';
+import {
+  MessageAction,
+  PaidStatus,
+  Prisma,
+  Role,
+  Status,
+} from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseService } from 'src/supabase/supabase.service';
 import * as bcrypt from 'bcrypt';
+import { MessagesService } from 'src/messages/messages.service';
 
 const userInclude = {
   select: {
@@ -61,6 +68,7 @@ export class AdminOrdersService {
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly prisma: PrismaService,
+    private readonly messagesService: MessagesService,
   ) {}
 
   private normalizeOrder(order: AdminOrderWithDetails) {
@@ -107,13 +115,21 @@ export class AdminOrdersService {
   async confirmOrder(id: number, userId: number) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-      select: { status: true },
+      select: { status: true, id: true, customerId: true },
     });
 
     if (!order) throw new NotFoundException('Order not found');
 
     if (order.status !== Status.PENDING)
       throw new BadRequestException('Only pending requests can be confirmed');
+
+    void this.messagesService
+      .create({
+        orderId: order.id,
+        action: MessageAction.ORDER_CONFIRMED,
+        userId: order.customerId,
+      })
+      .catch((e) => console.log(e));
 
     return await this.prisma.order.update({
       where: { id },
@@ -206,7 +222,7 @@ export class AdminOrdersService {
 
     const order = await this.prisma.order.findUnique({
       where: { id },
-      select: { status: true, assignedToId: true },
+      select: { status: true, assignedToId: true, id: true, customerId: true },
     });
 
     if (!order) throw new NotFoundException('Order not found');
@@ -218,6 +234,14 @@ export class AdminOrdersService {
     // allow admins as far as it's not delivered
     // also allow anyone as far as it's still pending
     if (isAdmin || order.status === Status.PENDING) {
+      void this.messagesService
+        .create({
+          orderId: order.id,
+          action: MessageAction.ORDER_CANCELLED,
+          userId: order.customerId,
+        })
+        .catch((e) => console.log(e));
+
       return this.prisma.order.update({
         where: { id },
         data,
@@ -229,6 +253,14 @@ export class AdminOrdersService {
     if (order.assignedToId !== user.id) {
       throw new UnauthorizedException('This order is not assigned to you');
     }
+
+    void this.messagesService
+      .create({
+        orderId: order.id,
+        action: MessageAction.ORDER_CANCELLED,
+        userId: order.customerId,
+      })
+      .catch((e) => console.log(e));
 
     return await this.prisma.order.update({
       where: { id },
@@ -242,6 +274,8 @@ export class AdminOrdersService {
       where: { id },
       select: {
         status: true,
+        id: true,
+        customerId: true,
       },
     });
 
@@ -250,6 +284,14 @@ export class AdminOrdersService {
     if (order.status !== Status.CANCELLED) {
       throw new BadRequestException('You can only revive a cancelled order');
     }
+
+    void this.messagesService
+      .create({
+        orderId: order.id,
+        action: MessageAction.ORDER_REVIVED,
+        userId: order.customerId,
+      })
+      .catch((e) => console.log(e));
 
     return await this.prisma.order.update({
       where: { id },
@@ -263,10 +305,19 @@ export class AdminOrdersService {
       where: { id },
       select: {
         id: true,
+        customerId: true,
       },
     });
 
     if (!order) throw new NotFoundException('Order not found');
+
+    void this.messagesService
+      .create({
+        orderId: order.id,
+        action: MessageAction.PAYMENT_VERIFIED,
+        userId: order.customerId,
+      })
+      .catch((e) => console.log(e));
 
     return await this.prisma.order.update({
       where: { id },
@@ -282,6 +333,8 @@ export class AdminOrdersService {
       select: {
         status: true,
         assignedToId: true,
+        id: true,
+        customerId: true,
       },
     });
 
@@ -296,6 +349,14 @@ export class AdminOrdersService {
     if (!isAdmin && order.assignedToId !== user.id) {
       throw new UnauthorizedException('You cannot update this order!');
     }
+
+    void this.messagesService
+      .create({
+        orderId: order.id,
+        action: MessageAction.ORDER_OUT_FOR_DELIVERY,
+        userId: order.customerId,
+      })
+      .catch((e) => console.log(e));
 
     return await this.prisma.order.update({
       where: { id },
@@ -317,6 +378,8 @@ export class AdminOrdersService {
         confirmationAttempts: true,
         confirmationLockedUntil: true,
         assignedToId: true,
+        id: true,
+        customerId: true,
       },
     });
 
@@ -332,28 +395,45 @@ export class AdminOrdersService {
       throw new BadRequestException('Please verify payment before delivery');
     }
 
-    if (
-      order.confirmationAttempts >= 5 &&
-      order.confirmationLockedUntil!.getDate() > Date.now()
-    ) {
-      throw new UnauthorizedException('Code locked');
-    }
-
     if (!isAdmin && order.assignedToId !== user.id) {
       throw new UnauthorizedException('You cannot deliver this order!');
+    }
+
+    // 1. Lockout Check — SKIPPED ENTIRELY FOR ADMINS
+    if (
+      !isAdmin &&
+      order.confirmationAttempts >= 5 &&
+      order.confirmationLockedUntil &&
+      order.confirmationLockedUntil.getTime() > Date.now()
+    ) {
+      throw new UnauthorizedException({
+        message: 'Invalid code, code input locked for 5 minutes',
+        statusCode: 501,
+        confirmationLockedUntil: order.confirmationLockedUntil,
+      });
+    }
+
+    // 2. Baseline Attempts Calculation (Reset if lockout timer has passed)
+    let currentAttempts = order.confirmationAttempts;
+    if (
+      order.confirmationLockedUntil &&
+      order.confirmationLockedUntil.getTime() <= Date.now()
+    ) {
+      currentAttempts = 0;
     }
 
     const codeMatches = await bcrypt.compare(code, order.confirmationCodeHash);
 
     if (!codeMatches) {
-      if (order.confirmationAttempts >= 4) {
+      const newAttempts = currentAttempts + 1;
+
+      // Trigger lockout ONLY for non-admins (Managers/Riders)
+      if (!isAdmin && newAttempts >= 5) {
         const confirmationLockedUntil = new Date(Date.now() + 1000 * 60 * 5);
         await this.prisma.order.update({
           where: { id },
           data: {
-            confirmationAttempts: {
-              increment: 1,
-            },
+            confirmationAttempts: newAttempts,
             confirmationLockedUntil,
           },
         });
@@ -365,24 +445,34 @@ export class AdminOrdersService {
         });
       }
 
+      // Increment attempts counter on invalid attempt
       await this.prisma.order.update({
         where: { id },
         data: {
-          confirmationAttempts: {
-            increment: 1,
-          },
+          confirmationAttempts: newAttempts,
         },
       });
+
       throw new UnauthorizedException('Invalid code, try again');
     }
 
-    // now that code matches, let's update to delivered;
+    // 3. Code Matches! Reset attempts/lockout state and set status to DELIVERED
+    void this.messagesService
+      .create({
+        orderId: order.id,
+        action: MessageAction.ORDER_DELIVERED,
+        userId: order.customerId,
+      })
+      .catch((e) => console.log(e));
+
     return await this.prisma.order.update({
       where: { id },
       data: {
         status: Status.DELIVERED,
         deliveredById: userId,
         deliveredAt: new Date(),
+        confirmationAttempts: 0,
+        confirmationLockedUntil: null,
       },
       include: adminOrderManagementInclude,
     });
