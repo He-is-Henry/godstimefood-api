@@ -6,9 +6,10 @@ import { SupabaseModule } from 'src/supabase/supabase.module';
 import { AdminOrdersController } from './admin-orders.controller';
 import { AdminOrdersService } from './admin-orders.service';
 import { MessagesModule } from 'src/messages/messages.module';
+import { PushModule } from 'src/push/push.module';
 
 @Module({
-  imports: [UsersModule, SupabaseModule, MessagesModule],
+  imports: [UsersModule, SupabaseModule, MessagesModule, PushModule],
   controllers: [OrdersController, AdminOrdersController],
   providers: [OrdersService, AdminOrdersService],
   exports: [OrdersService],

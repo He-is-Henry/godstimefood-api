@@ -16,7 +16,16 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseService } from 'src/supabase/supabase.service';
 import * as bcrypt from 'bcrypt';
 import { MessagesService } from 'src/messages/messages.service';
+import { PushPayload, PushService } from 'src/push/push.service';
 import { FilterAdminOrdersDto } from './dto/filter-admin-order.dto';
+
+export interface JwtPayload {
+  id: number;
+  role: Role;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+}
 
 const userInclude = {
   select: {
@@ -70,6 +79,7 @@ export class AdminOrdersService {
     private readonly supabaseService: SupabaseService,
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
+    private readonly pushService: PushService,
   ) {}
 
   private normalizeOrder(order: AdminOrderWithDetails) {
@@ -185,13 +195,33 @@ export class AdminOrdersService {
       throw new ConflictException('User is already assigned');
     }
 
-    return await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data: {
         assignedToId,
       },
       include: adminOrderManagementInclude,
     });
+
+    const normalized = this.normalizeOrder(updatedOrder);
+    const icon = normalized.items[0]?.product?.images?.item[0]?.url;
+
+    // Dispatch Push Notification to Newly Assigned Staff
+    const payload: PushPayload = {
+      title: '📋 Order Assigned to You',
+      badge: '/icons/badge-72x72.png',
+      body: `You have been assigned to handle Order #${id}.`,
+      icon,
+      url: `/admin/orders/${id}`,
+      tag: `order-${id}`,
+      renotify: true,
+    };
+
+    void this.pushService.sendToManagement('assigned', payload, {
+      assignedAdminId: assignedToId,
+    });
+
+    return normalized;
   }
 
   async claimOrder(id: number, userId: number) {
@@ -253,6 +283,7 @@ export class AdminOrdersService {
 
   async cancelOrder(id: number, user: JwtPayload) {
     const isAdmin = user.role === Role.ADMIN;
+    const isManager = user.role === Role.MANAGER;
     const data = { status: Status.CANCELLED, cancelledById: user.id };
 
     const order = await this.prisma.order.findUnique({
@@ -266,29 +297,15 @@ export class AdminOrdersService {
       throw new BadRequestException('You cannot cancel a delivered order');
     }
 
-    // allow admins as far as it's not delivered
-    // also allow anyone as far as it's still pending
-    if (isAdmin || order.status === Status.PENDING) {
-      void this.messagesService
-        .create({
-          orderId: order.id,
-          action: MessageAction.ORDER_CANCELLED,
-          userId: order.customerId,
-        })
-        .catch((e) => console.log(e));
-
-      return this.prisma.order.update({
-        where: { id },
-        data,
-        include: adminOrderManagementInclude,
-      });
-    }
-
-    // we know it's not pending and it's definitely a manager, we need to check assigned
-    if (order.assignedToId !== user.id) {
+    if (
+      !isAdmin &&
+      order.status !== Status.PENDING &&
+      order.assignedToId !== user.id
+    ) {
       throw new UnauthorizedException('This order is not assigned to you');
     }
 
+    // 1. Notify Customer via MessagesService
     void this.messagesService
       .create({
         orderId: order.id,
@@ -297,11 +314,55 @@ export class AdminOrdersService {
       })
       .catch((e) => console.log(e));
 
-    return await this.prisma.order.update({
+    // 2. Perform DB update
+    const updatedOrder = await this.prisma.order.update({
       where: { id },
       data,
       include: adminOrderManagementInclude,
     });
+
+    const normalized = this.normalizeOrder(updatedOrder);
+    const icon = normalized.items[0]?.product?.images?.item[0]?.url;
+    const staffName =
+      [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+      `Staff #${user.id}`;
+
+    // 3. Dispatch Management Push Notifications
+
+    // If cancelled by a Manager -> Notify Admins
+    if (isManager) {
+      void this.pushService.sendToManagement(
+        'admin',
+        {
+          title: '⚠️ Order Cancelled by Manager',
+          body: `${staffName} cancelled Order #${id}.`,
+          icon,
+          badge: '/icons/badge-72x72.png',
+          url: `/admin/orders/${id}`,
+          tag: `order-${id}`,
+          renotify: true,
+        },
+        { actorId: user.id },
+      );
+    }
+
+    // If assigned to someone else -> Notify Assigned Staff
+    if (order.assignedToId && order.assignedToId !== user.id) {
+      void this.pushService.sendToManagement(
+        'assigned',
+        {
+          title: '❌ Assigned Order Cancelled',
+          body: `Order #${id} assigned to you was cancelled by ${staffName}.`,
+          icon,
+          badge: '/icons/badge-72x72.png',
+          url: `/admin/orders/${id}`,
+          tag: `order-${id}`,
+        },
+        { assignedAdminId: order.assignedToId, actorId: user.id },
+      );
+    }
+
+    return normalized;
   }
 
   async reviveOrder(id: number) {
@@ -434,7 +495,6 @@ export class AdminOrdersService {
       throw new UnauthorizedException('You cannot deliver this order!');
     }
 
-    // 1. Lockout Check — SKIPPED ENTIRELY FOR ADMINS
     if (
       !isAdmin &&
       order.confirmationAttempts >= 5 &&
@@ -448,7 +508,6 @@ export class AdminOrdersService {
       });
     }
 
-    // 2. Baseline Attempts Calculation (Reset if lockout timer has passed)
     let currentAttempts = order.confirmationAttempts;
     if (
       order.confirmationLockedUntil &&
@@ -462,7 +521,6 @@ export class AdminOrdersService {
     if (!codeMatches) {
       const newAttempts = currentAttempts + 1;
 
-      // Trigger lockout ONLY for non-admins (Managers/Riders)
       if (!isAdmin && newAttempts >= 5) {
         const confirmationLockedUntil = new Date(Date.now() + 1000 * 60 * 5);
         await this.prisma.order.update({
@@ -480,7 +538,6 @@ export class AdminOrdersService {
         });
       }
 
-      // Increment attempts counter on invalid attempt
       await this.prisma.order.update({
         where: { id },
         data: {
@@ -491,7 +548,6 @@ export class AdminOrdersService {
       throw new UnauthorizedException('Invalid code, try again');
     }
 
-    // 3. Code Matches! Reset attempts/lockout state and set status to DELIVERED
     void this.messagesService
       .create({
         orderId: order.id,

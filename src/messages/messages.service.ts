@@ -118,7 +118,10 @@ export class MessagesService {
           title: config.title,
           body: config.body(itemSummary),
           icon,
+          badge: '/icons/badge-72x72.png',
           url: `/orders/${createMessageDto.orderId}`,
+          tag: `order-${order.id}`,
+          renotify: true,
         });
       }
     }

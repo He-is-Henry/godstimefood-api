@@ -12,6 +12,7 @@ import { SupabaseService } from 'src/supabase/supabase.service';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
+import { PushPayload, PushService } from 'src/push/push.service';
 
 interface CartItemWithProd extends Omit<CartItem, 'id'> {
   product: Product;
@@ -62,6 +63,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
     private readonly supabaseService: SupabaseService,
+    private readonly pushService: PushService,
   ) {}
 
   private normalizeOrder(order: OrderWithDetails) {
@@ -201,7 +203,24 @@ export class OrdersService {
       return order;
     });
 
-    return result;
+    const order = await this.findOrder(customerId, result.id);
+
+    const customerName =
+      [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Customer';
+    const firstProductImage = order.items[0]?.product?.images?.item[0]?.url;
+
+    const payload: PushPayload = {
+      title: '🛍️ New Order Received!',
+      body: `${customerName} placed Order #${order.id} for ₦${order.totalAmount.toLocaleString()}`,
+      icon: firstProductImage,
+      badge: '/icons/badge-72x72.png',
+      url: `/admin/orders/${order.id}`,
+      tag: `order-${order.id}`,
+      renotify: true,
+    };
+
+    void this.pushService.sendToManagement('all', payload);
+    return order;
   }
 
   async findOrders(customerId: number) {
@@ -248,12 +267,30 @@ export class OrdersService {
       );
     }
 
-    return await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id, customerId, status: Status.PENDING },
       data: { status: Status.CANCELLED },
       include: orderWithItemsInclude,
       omit,
     });
+
+    const normalized = this.normalizeOrder(updatedOrder);
+    const firstProductImage =
+      normalized.items[0]?.product?.images?.item[0]?.url;
+
+    const payload: PushPayload = {
+      title: '❌ Order Cancelled',
+      body: `Customer cancelled Order #${id}. Do not prepare.`,
+      icon: firstProductImage,
+      badge: '/icons/badge-72x72.png',
+      url: `/admin/orders/${id}`,
+      tag: `order-${id}`,
+      renotify: true,
+    };
+
+    void this.pushService.sendToManagement('all', payload);
+
+    return normalized;
   }
 
   async claimPayment(customerId: number, id: number) {
@@ -269,12 +306,30 @@ export class OrdersService {
       throw new BadRequestException('You cannot update a delivered order');
     }
 
-    return await this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id, customerId },
       data: { paid: PaidStatus.PENDING_VERIFICATION },
       include: orderWithItemsInclude,
       omit,
     });
+
+    const normalized = this.normalizeOrder(updatedOrder);
+    const firstProductImage =
+      normalized.items[0]?.product?.images?.item[0]?.url;
+
+    const payload: PushPayload = {
+      title: '💳 Payment Claimed',
+      body: `Customer submitted payment for Order #${id} (₦${normalized.totalAmount.toLocaleString()}). Tap to verify.`,
+      icon: firstProductImage,
+      badge: '/icons/badge-72x72.png',
+      url: `/admin/orders/${id}`,
+      tag: `order-${id}`,
+      renotify: true,
+    };
+
+    void this.pushService.sendToManagement('all', payload);
+
+    return normalized;
   }
 
   async updateOrder(
