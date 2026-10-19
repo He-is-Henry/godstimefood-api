@@ -16,6 +16,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SupabaseService } from 'src/supabase/supabase.service';
 import * as bcrypt from 'bcrypt';
 import { MessagesService } from 'src/messages/messages.service';
+import { FilterAdminOrdersDto } from './dto/filter-admin-order.dto';
 
 const userInclude = {
   select: {
@@ -90,15 +91,49 @@ export class AdminOrdersService {
     };
   }
 
-  async findAllOrdersAdmin() {
-    const orders = await this.prisma.order.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: adminOrderInclude,
-    });
+  async findAllOrdersAdmin(dto: FilterAdminOrdersDto) {
+    const { page = 1, limit = 15, status, search } = dto;
+    const skip = (page - 1) * limit;
 
-    const mappedOrders = orders.map((order) => this.normalizeOrder(order));
+    const where: Prisma.OrderWhereInput = {};
 
-    return mappedOrders;
+    if (status && status !== 'ALL') {
+      where.status = status as Prisma.EnumStatusFilter;
+    }
+
+    if (search?.trim()) {
+      const term = search.trim();
+      const searchAsNumber = parseInt(term, 10);
+
+      where.OR = [
+        ...(!isNaN(searchAsNumber) ? [{ id: searchAsNumber }] : []),
+        { customer: { firstName: { contains: term, mode: 'insensitive' } } },
+        { customer: { lastName: { contains: term, mode: 'insensitive' } } },
+        { customer: { phone: { contains: term, mode: 'insensitive' } } },
+        { deliveryAddress: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, orders] = await Promise.all([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: adminOrderInclude,
+      }),
+    ]);
+
+    return {
+      data: orders.map((order) => this.normalizeOrder(order)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
   }
 
   async findOrderAdmin(id: number) {

@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import { AdminOrdersService } from './admin-orders.service';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { User } from 'src/common/decorators/user.decorator';
 import { AssignOrderDto } from './dto/assign-order.dto';
 import { DeliverOrderDto } from './dto/deliver-order.dto';
+import { FilterAdminOrdersDto } from './dto/filter-admin-order.dto';
 
 @Roles(Role.ADMIN, Role.MANAGER)
 @Controller('admin/orders')
@@ -12,8 +13,8 @@ export class AdminOrdersController {
   constructor(private readonly adminOrdersService: AdminOrdersService) {}
 
   @Get()
-  findAllOrdersAdmin() {
-    return this.adminOrdersService.findAllOrdersAdmin();
+  findAllOrdersAdmin(@Query() dto: FilterAdminOrdersDto) {
+    return this.adminOrdersService.findAllOrdersAdmin(dto);
   }
 
   @Get(':id')
