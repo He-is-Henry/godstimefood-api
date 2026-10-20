@@ -47,19 +47,39 @@ export class PushService implements OnModuleInit {
   }
 
   async subscribe(sessionId: string, dto: CreatePushDto) {
-    return this.prisma.pushSubscription.upsert({
-      where: { sessionId },
-      update: {
-        endpoint: dto.endpoint,
-        p256dh: dto.keys.p256dh,
-        auth: dto.keys.auth,
-      },
-      create: {
-        sessionId,
-        endpoint: dto.endpoint,
-        p256dh: dto.keys.p256dh,
-        auth: dto.keys.auth,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.pushSubscription.findMany({
+        where: {
+          OR: [{ endpoint: dto.endpoint }, { sessionId }],
+        },
+        select: { id: true },
+      });
+
+      if (existing.length > 0) {
+        const ids = existing.map((s) => s.id);
+        this.logger.log(
+          `Replacing ${ids.length} existing subscription(s) [ID(s): ${ids.join(', ')}] for session ${sessionId}`,
+        );
+
+        await tx.pushSubscription.deleteMany({
+          where: { id: { in: ids } },
+        });
+      }
+
+      const sub = await tx.pushSubscription.create({
+        data: {
+          sessionId,
+          endpoint: dto.endpoint,
+          p256dh: dto.keys.p256dh,
+          auth: dto.keys.auth,
+        },
+      });
+
+      this.logger.log(
+        `Created push subscription #${sub.id} for session ${sessionId}`,
+      );
+
+      return sub;
     });
   }
 

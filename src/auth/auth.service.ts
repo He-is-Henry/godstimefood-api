@@ -49,14 +49,17 @@ export class AuthService {
     };
   }
 
-  async login(email: string, password: string, clientData: ISClientData) {
+  async login(
+    email: string,
+    password: string,
+    clientData: ISClientData,
+    existingToken?: string,
+  ) {
     const user = await this.usersService.findByEmail(email);
 
     if (!user) throw new NotFoundException('User not found');
 
     const passwordMatches = await bcrypt.compare(password, user.password);
-
-    console.log(user.password);
 
     if (!passwordMatches)
       throw new UnauthorizedException('Incorrect password, try again');
@@ -65,6 +68,17 @@ export class AuthService {
       throw new ForbiddenException(
         'Your account is inactive, please contact your administrator',
       );
+
+    if (existingToken) {
+      try {
+        const decoded: JwtPayload = this.jwtService.decode(existingToken);
+        if (decoded?.sessionId) {
+          await this.sessionsService.delete(decoded.sessionId);
+        }
+      } catch (e) {
+        console.log(e);
+      }
+    }
 
     const sessionId = crypto.randomUUID();
 

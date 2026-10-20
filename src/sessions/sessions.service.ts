@@ -72,7 +72,7 @@ export class SessionsService {
     }));
   }
 
-  async deleteForUser(userId: number, id: string, currentSessionId: string) {
+  async deleteForUser(userId: number, id: string, currentSessionId?: string) {
     await this.prisma.session.deleteMany({
       where: {
         userId,
@@ -80,7 +80,7 @@ export class SessionsService {
       },
     });
 
-    return this.getSessions(userId, currentSessionId);
+    if (currentSessionId) return this.getSessions(userId, currentSessionId);
   }
 
   revokeAll(userId: number, excludedId?: string) {

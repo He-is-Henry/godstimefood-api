@@ -53,11 +53,13 @@ export class AuthController {
     @Res() res: Response,
     @Body() loginDto: LoginDto,
     @ClientData() clientData: ISClientData,
+    @ExtractToken() existingToken?: string,
   ) {
     const { user, tokens } = await this.authService.login(
       loginDto.email,
       loginDto.password,
       clientData,
+      existingToken,
     );
 
     return handleTokenRes(res, tokens, 'Sign in', user);
