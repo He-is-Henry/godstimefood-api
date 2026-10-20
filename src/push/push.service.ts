@@ -13,6 +13,8 @@ export interface PushPayload {
   url?: string;
   tag: string;
   renotify?: boolean;
+  urgency?: 'very-low' | 'low' | 'normal' | 'high';
+  ttl?: number;
 }
 
 @Injectable()
@@ -67,7 +69,9 @@ export class PushService implements OnModuleInit {
     const payloadString = JSON.stringify(payload);
 
     await Promise.allSettled(
-      subscriptions.map((sub) => this.dispatchPush(sub, payloadString)),
+      subscriptions.map((sub) =>
+        this.dispatchPush(sub, payloadString, payload),
+      ),
     );
   }
 
@@ -110,6 +114,7 @@ export class PushService implements OnModuleInit {
   private async dispatchPush(
     sub: { id: number; endpoint: string; p256dh: string; auth: string },
     payloadString: string,
+    payload: PushPayload,
   ) {
     const pushConfig = {
       endpoint: sub.endpoint,
@@ -119,8 +124,13 @@ export class PushService implements OnModuleInit {
       },
     };
 
+    const options: webPush.RequestOptions = {
+      urgency: payload.urgency || 'high',
+      TTL: payload.ttl ?? 86400,
+    };
+
     try {
-      await webPush.sendNotification(pushConfig, payloadString);
+      await webPush.sendNotification(pushConfig, payloadString, options);
     } catch (error: unknown) {
       if (error instanceof webPush.WebPushError) {
         if (error.statusCode === 404 || error.statusCode === 410) {
