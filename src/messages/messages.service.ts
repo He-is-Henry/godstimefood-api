@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import {
@@ -53,6 +53,8 @@ const NOTIFICATION_CONFIG: Record<
 
 @Injectable()
 export class MessagesService {
+  private readonly logger = new Logger(MessagesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly supabaseService: SupabaseService,
@@ -114,7 +116,7 @@ export class MessagesService {
       const config = NOTIFICATION_CONFIG[createMessageDto.action];
 
       if (config) {
-        void this.pushService.sendToUser(createMessageDto.userId, {
+        const payload = {
           title: config.title,
           body: config.body(itemSummary),
           icon,
@@ -122,7 +124,31 @@ export class MessagesService {
           url: `/orders/${createMessageDto.orderId}`,
           tag: `order-${order.id}`,
           renotify: true,
-        });
+        };
+
+        // 3. Log initial dispatch attempt
+        this.logger.log(
+          `Dispatching push notification [${createMessageDto.action}] for Order #${order.id} to User #${createMessageDto.userId}`,
+        );
+
+        // 4. Handle success and failure asynchronously without blocking HTTP response
+        this.pushService
+          .sendToUser(createMessageDto.userId, payload)
+          .then((result) => {
+            this.logger.log({
+              message: `Push notification delivered successfully`,
+              userId: createMessageDto.userId,
+              orderId: createMessageDto.orderId,
+              action: createMessageDto.action,
+              result,
+            });
+          })
+          .catch((error) => {
+            this.logger.error(
+              `Failed to send push notification [${createMessageDto.action}] to User #${createMessageDto.userId}`,
+              error instanceof Error ? error.stack : error,
+            );
+          });
       }
     }
 

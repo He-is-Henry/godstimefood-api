@@ -329,7 +329,7 @@ export class AdminOrdersService {
 
     // 3. Dispatch Management Push Notifications
 
-    // If cancelled by a Manager -> Notify Admins
+    // If cancelled by a Manager, Notify Admins
     if (isManager) {
       void this.pushService.sendToManagement(
         'admin',
@@ -346,7 +346,7 @@ export class AdminOrdersService {
       );
     }
 
-    // If assigned to someone else -> Notify Assigned Staff
+    // If assigned to someone else, Notify Assigned Staff
     if (order.assignedToId && order.assignedToId !== user.id) {
       void this.pushService.sendToManagement(
         'assigned',
