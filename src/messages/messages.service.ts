@@ -134,18 +134,20 @@ export class MessagesService {
         // 4. Handle success and failure asynchronously without blocking HTTP response
         this.pushService
           .sendToUser(createMessageDto.userId, payload)
-          .then((result) => {
-            this.logger.log({
-              message: `Push notification delivered successfully`,
-              userId: createMessageDto.userId,
-              orderId: createMessageDto.orderId,
-              action: createMessageDto.action,
-              result,
-            });
+          .then((res) => {
+            if (res.totalSubscriptions === 0) {
+              this.logger.warn(
+                `Push skipped for Order #${createMessageDto.orderId}: User #${createMessageDto.userId} has no registered push subscriptions.`,
+              );
+            } else {
+              this.logger.log(
+                `Push delivery result for Order #${createMessageDto.orderId}: ${res.sentCount}/${res.totalSubscriptions} succeeded.`,
+              );
+            }
           })
           .catch((error) => {
             this.logger.error(
-              `Failed to send push notification [${createMessageDto.action}] to User #${createMessageDto.userId}`,
+              `Push execution error for Order #${createMessageDto.orderId}:`,
               error instanceof Error ? error.stack : error,
             );
           });

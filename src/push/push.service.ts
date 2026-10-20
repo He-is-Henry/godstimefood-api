@@ -17,6 +17,17 @@ export interface PushPayload {
   ttl?: number;
 }
 
+export interface PushResult {
+  totalSubscriptions: number;
+  sentCount: number;
+  failedCount: number;
+  details: Array<{
+    subscriptionId: number;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
 @Injectable()
 export class PushService implements OnModuleInit {
   private readonly logger = new Logger(PushService.name);
@@ -52,9 +63,19 @@ export class PushService implements OnModuleInit {
     });
   }
 
-  async sendToUser(userIds: number | number[], payload: PushPayload) {
+  async sendToUser(
+    userIds: number | number[],
+    payload: PushPayload,
+  ): Promise<PushResult> {
     const ids = Array.isArray(userIds) ? userIds : [userIds];
-    if (!ids.length) return;
+    if (!ids.length) {
+      return {
+        totalSubscriptions: 0,
+        sentCount: 0,
+        failedCount: 0,
+        details: [],
+      };
+    }
 
     const subscriptions = await this.prisma.pushSubscription.findMany({
       where: {
@@ -64,15 +85,35 @@ export class PushService implements OnModuleInit {
       },
     });
 
-    if (!subscriptions.length) return;
+    if (!subscriptions.length) {
+      this.logger.warn(
+        `No push subscriptions found in DB for User ID(s): [${ids.join(', ')}]`,
+      );
+      return {
+        totalSubscriptions: 0,
+        sentCount: 0,
+        failedCount: 0,
+        details: [],
+      };
+    }
 
     const payloadString = JSON.stringify(payload);
 
-    await Promise.allSettled(
+    const details = await Promise.all(
       subscriptions.map((sub) =>
         this.dispatchPush(sub, payloadString, payload),
       ),
     );
+
+    const sentCount = details.filter((d) => d.success).length;
+    const failedCount = details.filter((d) => !d.success).length;
+
+    return {
+      totalSubscriptions: subscriptions.length,
+      sentCount,
+      failedCount,
+      details,
+    };
   }
 
   async sendToManagement(
@@ -108,14 +149,14 @@ export class PushService implements OnModuleInit {
     if (!users.length) return;
 
     const targetIds = users.map((u) => u.id);
-    await this.sendToUser(targetIds, payload);
+    return await this.sendToUser(targetIds, payload);
   }
 
   private async dispatchPush(
     sub: { id: number; endpoint: string; p256dh: string; auth: string },
     payloadString: string,
     payload: PushPayload,
-  ) {
+  ): Promise<{ subscriptionId: number; success: boolean; error?: string }> {
     const pushConfig = {
       endpoint: sub.endpoint,
       keys: {
@@ -131,20 +172,35 @@ export class PushService implements OnModuleInit {
 
     try {
       await webPush.sendNotification(pushConfig, payloadString, options);
+      return { subscriptionId: sub.id, success: true };
     } catch (error: unknown) {
+      let errorMessage = 'Unknown push dispatch error';
+
       if (error instanceof webPush.WebPushError) {
+        errorMessage = `WebPush Error ${error.statusCode}: ${error.body || error.message}`;
         if (error.statusCode === 404 || error.statusCode === 410) {
           this.logger.warn(
-            `Push subscription expired/invalid. Removing ID: ${sub.id}`,
+            `Push subscription expired/invalid (HTTP ${error.statusCode}). Deleting Sub ID: ${sub.id}`,
           );
-          await this.prisma.pushSubscription.delete({
-            where: { id: sub.id },
-          });
-          return;
+          await this.prisma.pushSubscription
+            .delete({
+              where: { id: sub.id },
+            })
+            .catch((err) =>
+              this.logger.error(
+                `Failed to clean up dead subscription ${sub.id}`,
+                err,
+              ),
+            );
         }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
       }
 
-      this.logger.error(`Failed to send push to sub ID ${sub.id}:`, error);
+      this.logger.error(
+        `Failed push dispatch to Sub ID ${sub.id}: ${errorMessage}`,
+      );
+      return { subscriptionId: sub.id, success: false, error: errorMessage };
     }
   }
 }
